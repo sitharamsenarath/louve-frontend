@@ -1,34 +1,51 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   signInWithPopup,
-  updateProfile
+  updateProfile,
+  User,
+  onAuthStateChanged,
+  getIdToken
 } from "firebase/auth";
 import { auth, googleProvider } from "../services/firebase";
-import api from "../services/api";
+import { firebaseSyncUser } from "../api/users";
 
 export const useAuth = (onLoginSuccess: (userName: string) => void, onClose: () => void) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setUser(firebaseUser);
+      if (firebaseUser) {
+        const idToken = await firebaseUser.getIdToken();
+        setToken(idToken);
+      } else {
+        setToken(null);
+      }
+    });
+    return unsubscribe;
+  }, []);
+  
   const syncUserWithBackend = async (email: string, name: string, provider = "firebase") => {
     const currentUser = auth.currentUser;
     if (!currentUser) {
         console.warn("No authenticated Firebase user");
         return;
     }
-    const idToken = await currentUser.getIdToken();
+    let idToken: string;
     try {
-        await api.post(
-            "/v1/users/firebase-sync", 
-            {name},
-            {
-                headers: {
-                    Authorization: `Bearer ${idToken}`, 
-                },
-            }
-        );
+        idToken = await currentUser.getIdToken(true);
+    } catch (e) {
+        console.warn("Token refresh failed, trying without force refresh");
+        idToken = await currentUser.getIdToken();
+    }
+    setToken(idToken);
+    try {
+        await firebaseSyncUser(name, idToken);
     } catch (err) {
       console.error("Failed to sync Firebase user", err);
     }
@@ -60,18 +77,25 @@ export const useAuth = (onLoginSuccess: (userName: string) => void, onClose: () 
     setLoading(true);
     setError(null);
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      if (auth.currentUser) {
-        await updateProfile(auth.currentUser, { displayName: name });
-      }
-      const userName = userCredential.user.displayName || userCredential.user.email || "User";
-      onLoginSuccess(userName);
-      await syncCurrentUser();
-      onClose();
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        const user = userCredential.user;
+
+        if (!user) throw new Error("User creation failed");
+
+        await updateProfile(user, { displayName: name });
+        const idToken = await getIdToken(user, true);
+        await firebaseSyncUser(name, idToken);
+
+        const userName = userCredential.user.displayName || userCredential.user.email || "User";
+        onLoginSuccess(userName);
+        await syncCurrentUser();
+        onClose();
     } catch (err: any) {
-      setError(err.message || "Failed to sign up.");
+        console.error("Signup failed:", err);
+        setError(err.message || "Signup failed");
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleGoogleLogin = async () => {
@@ -92,6 +116,8 @@ export const useAuth = (onLoginSuccess: (userName: string) => void, onClose: () 
   return {
     loading,
     error,
+    user,
+    token,
     loginWithEmail,
     signupWithEmail,
     handleGoogleLogin,

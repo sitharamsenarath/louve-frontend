@@ -10,7 +10,7 @@ import {
   Input,
 } from '@chakra-ui/react';
 import { Category } from '../../types/Category';
-import { getCategories } from '../../services/categories';
+import { getCategories } from '../../api/categories';
 import { useEffect, useState } from 'react';
 
 
@@ -34,10 +34,6 @@ const featuredProducts = [
     image: '/assets/shoes.jpg',
   },
 ];
-
-// const categories = ['Hoodies', 'Jackets', 'Shoes'];
-
-
 
 export default function Home() {
     const [categories, setCategories] = useState<Category[]>([]);

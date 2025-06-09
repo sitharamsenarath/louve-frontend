@@ -1,126 +1,135 @@
-import React, { useEffect, useState } from 'react';
-import {
-  Box,
-  Flex,
-  Text,
-  Spinner,
-  SimpleGrid,
-  Heading,
-  Button,
-  useToast,
-} from '@chakra-ui/react';
-import axios from 'axios';
-import { getCategories } from '../../services/categories';
-import { getProducts, getProductsByCategory } from '../../services/products';
+import { Box, Flex, Spinner, SimpleGrid, Heading, useToast } from '@chakra-ui/react';
+import { useState } from 'react';
+import { useCategories } from '../../hooks/useCategories';
+import { useProducts } from '../../hooks/useProducts';
+import { CategoryList } from '../../components/CategoryList';
+import { ProductCard } from '../../components/ProductCard';
 import { Product } from '../../types/Product';
-import { Category } from '../../types/Category';
+import AuthModal from '../../components/AuthModal';
+import api from '../../services/api';
+import { useAuth } from '../../hooks/useAuth';
 
-
-const Shop: React.FC = () => {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [products, setProducts] = useState<Product[]>([]);
+const Shop = () => {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const toast = useToast();
 
-  useEffect(() => {
-    fetchCategories();
-    fetchProducts();
-  }, []);
+  const { categories } = useCategories();
+  const { products, loading } = useProducts(selectedCategoryId);
 
-  useEffect(() => {
-    fetchProducts(selectedCategoryId ?? undefined);
-  }, [selectedCategoryId]);
+  const { user, token } = useAuth(
+    (userName) => {
+      toast({
+        title: `Welcome, ${userName}`,
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+      setAuthModalOpen(false);
+    },
+    () => setAuthModalOpen(false) // onClose
+  );
 
-  const fetchCategories = async () => {
-    getCategories()
-        .then((data) => setCategories(data))
-        .catch((err) => console.error('Failed to fetch categories:', err));
+  const openAuthModal = (mode: 'login' | 'signup') => {
+    setAuthMode(mode);
+    setAuthModalOpen(true);
   };
 
+  const closeAuthModal = () => {
+    setAuthModalOpen(false);
+  };
 
-  const fetchProducts = async (categoryId?: number) => {
-  setLoading(true);
-  try {
-    const products = categoryId
-      ? await getProductsByCategory(categoryId)
-      : await getProducts();
-    setProducts(products);
-  } catch (err) {
-    toast({
-      title: 'Error fetching products',
-      status: 'error',
-      duration: 4000,
-      isClosable: true,
-    });
-  } finally {
-    setLoading(false);
-  }
-};
+  const handleAddToCart = async (product: Product) => {
+    if (!user || !token) {
+      openAuthModal('login');
+      return;
+    }
+
+    try {
+      const payload = {
+        user_email: user.email,
+        product_id: product.id,
+        quantity: 1,
+        is_active: true,
+      };
+
+      console.log(payload)
+
+      await api.post('/v1/cart/items', payload, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        withCredentials: true,
+      });
+
+      toast({
+        title: 'Added to cart',
+        description: `${product.name} has been added.`,
+        status: 'success',
+        duration: 3000,
+        isClosable: true,
+      });
+    } catch (err: any) {
+      const errorDetail = err.response?.data?.detail;
+      toast({
+        title: 'Error adding to cart',
+        description: Array.isArray(errorDetail)
+        ? errorDetail.map((e) => e.msg).join(', ')
+        : (errorDetail?.message || 'Something went wrong'),
+        status: 'error',
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  };
 
   return (
     <Flex p={6} gap={6}>
-      {/* Sidebar */}
       <Box w="250px" borderRight="1px solid #eee" pr={4}>
-        <Heading size="md" mb={4}>
-          Categories
-        </Heading>
-        <Button
-          mb={2}
-          size="sm"
-          variant={selectedCategoryId === null ? 'solid' : 'ghost'}
-          colorScheme="teal"
-          onClick={() => setSelectedCategoryId(null)}
-        >
-          All Products
-        </Button>
-        {categories.map((category) => (
-          <Button
-            key={category.id}
-            mb={2}
-            size="sm"
-            variant={selectedCategoryId === category.id ? 'solid' : 'ghost'}
-            colorScheme="teal"
-            onClick={() => setSelectedCategoryId(category.id)}
-          >
-            {category.name}
-          </Button>
-        ))}
+        <CategoryList
+          categories={categories}
+          selectedCategoryId={selectedCategoryId}
+          onSelect={setSelectedCategoryId}
+        />
       </Box>
 
-      {/* Products Grid */}
       <Box flex="1">
         <Heading size="md" mb={4}>
           {selectedCategoryId
             ? `Products in ${categories.find(c => c.id === selectedCategoryId)?.name}`
             : 'All Products'}
         </Heading>
-
         {loading ? (
           <Spinner size="xl" />
         ) : (
           <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
             {products.map((product) => (
-              <Box
+              <ProductCard
                 key={product.id}
-                borderWidth="1px"
-                borderRadius="lg"
-                p={4}
-                bg="gray.50"
-                _hover={{ shadow: 'md' }}
-              >
-                <Heading size="sm" mb={2}>
-                  {product.name}
-                </Heading>
-                <Text fontSize="sm" color="gray.600" mb={2}>
-                  {product.description}
-                </Text>
-                <Text fontWeight="bold">${product.price}</Text>
-              </Box>
+                product={product}
+                onAddToCart={handleAddToCart}
+                onOpenAuthModal={openAuthModal}
+              />
             ))}
           </SimpleGrid>
         )}
       </Box>
+
+      <AuthModal
+        isOpen={authModalOpen}
+        onClose={closeAuthModal}
+        mode={authMode}
+        onLoginSuccess={(userName) =>
+          toast({
+            title: `Welcome back, ${userName}!`,
+            status: 'success',
+            duration: 3000,
+            isClosable: true,
+          })
+        }
+      />
     </Flex>
   );
 };

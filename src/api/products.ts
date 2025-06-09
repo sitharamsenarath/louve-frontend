@@ -1,5 +1,5 @@
 import { Product } from "../types/Product";
-import api from "./api";
+import api from "../services/api";
 
 export const getProducts = async (): Promise<Product[]> => {
   const response = await api.get<Product[]>(`/v1/products/active`);
