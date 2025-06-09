@@ -9,83 +9,16 @@ import {
   Input,
   Button,
   Text,
-  Spinner,
 } from "@chakra-ui/react"; 
-import {
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signInWithPopup,
-  updateProfile
-} from "firebase/auth";
-import axios from "axios";
-import { auth, googleProvider } from "../services/firebase";
-
-interface AuthModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  mode: "login" | "signup";
-  onLoginSuccess: (userName: string) => void;
-}
+import { useAuth } from "../hooks/useAuth"
+import { AuthModalProps } from "../types/auth";
 
 const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onLoginSuccess }) => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("");
+  const { loginWithEmail, signupWithEmail, handleGoogleLogin, loading, error } = useAuth(onLoginSuccess, onClose);
 
-  const loginWithEmail = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-
-      const userName = userCredential.user.displayName || userCredential.user.email || "User";
-      onLoginSuccess(userName); 
-
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to login.");
-    }
-    setLoading(false);
-  };
-
-  const signupWithEmail = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      if (auth.currentUser) {
-        await updateProfile(auth.currentUser,{
-          displayName: name,
-        });
-      }
-
-      const userName = userCredential.user.displayName || userCredential.user.email || "User";
-      onLoginSuccess(userName);
-
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Failed to sign up.");
-    }
-    setLoading(false);
-  };
-
-  const handleGoogleLogin = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await signInWithPopup(auth, googleProvider);
-
-      const userName = result.user.displayName || result.user.email || "User";
-      onLoginSuccess(userName);
-
-      onClose();
-    } catch (err: any) {
-      setError(err.message || "Google login failed.");
-    }
-    setLoading(false);
-  };
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} isCentered>
@@ -128,7 +61,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, mode, onLoginSuc
 
           <Button
             colorScheme="teal"
-            onClick={mode === "login" ? loginWithEmail : signupWithEmail}
+            onClick={mode === "login" ? () => loginWithEmail(email, password) : () => signupWithEmail(email, password, name)}
             mr={2}
             isLoading={loading}
             loadingText={mode === "login" ? "Logging in" : "Signing up"}
